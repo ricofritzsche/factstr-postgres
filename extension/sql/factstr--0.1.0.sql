@@ -155,3 +155,120 @@ AS $$
       AND events.event_type = ANY (event_types)
       AND events.payload @> COALESCE(payload_predicates, '{}'::jsonb);
 $$;
+
+-- append_if is the FACTSTR command context consistency primitive.
+-- The context version is evaluated over the full command context and is not
+-- affected by a read cursor.
+CREATE FUNCTION factstr.append_if(
+    events jsonb,
+    context_event_types text[],
+    context_payload_predicates jsonb,
+    expected_context_version bigint
+)
+RETURNS TABLE (
+    sequence_number bigint,
+    occurred_at timestamptz,
+    event_type text,
+    payload jsonb
+)
+LANGUAGE plpgsql
+VOLATILE
+AS $$
+DECLARE
+    base_sequence bigint;
+    event_count bigint;
+    actual_context_version bigint;
+    normalized_context_payload_predicates jsonb;
+BEGIN
+    IF jsonb_typeof(events) IS DISTINCT FROM 'array' THEN
+        RAISE EXCEPTION 'events must be a JSON array';
+    END IF;
+
+    event_count := jsonb_array_length(events);
+
+    IF event_count = 0 THEN
+        RAISE EXCEPTION 'events must not be empty';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM jsonb_array_elements(events) AS event_data(event_value)
+        WHERE jsonb_typeof(event_value) IS DISTINCT FROM 'object'
+           OR jsonb_typeof(event_value -> 'event_type') IS DISTINCT FROM 'string'
+           OR length(event_value ->> 'event_type') = 0
+    ) THEN
+        RAISE EXCEPTION 'event_type must be a non-empty string';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM jsonb_array_elements(events) AS event_data(event_value)
+        WHERE jsonb_typeof(event_value -> 'payload') IS DISTINCT FROM 'object'
+    ) THEN
+        RAISE EXCEPTION 'payload must be a JSON object';
+    END IF;
+
+    IF expected_context_version IS NULL THEN
+        RAISE EXCEPTION 'expected_context_version must not be null';
+    END IF;
+
+    IF expected_context_version < 0 THEN
+        RAISE EXCEPTION 'expected_context_version must be greater than or equal to 0';
+    END IF;
+
+    normalized_context_payload_predicates := COALESCE(context_payload_predicates, '{}'::jsonb);
+
+    SELECT current_sequence_number
+    INTO base_sequence
+    FROM factstr.metadata
+    WHERE id
+    FOR UPDATE;
+
+    IF cardinality(context_event_types) > 0 THEN
+        SELECT COALESCE(MAX(factstr.events.sequence_number), 0)
+        INTO actual_context_version
+        FROM factstr.events
+        WHERE factstr.events.event_type = ANY (context_event_types)
+          AND factstr.events.payload @> normalized_context_payload_predicates;
+    ELSE
+        actual_context_version := 0;
+    END IF;
+
+    IF actual_context_version <> expected_context_version THEN
+        RAISE EXCEPTION
+            'conditional append conflict: expected %, actual %',
+            expected_context_version,
+            actual_context_version;
+    END IF;
+
+    RETURN QUERY
+    WITH inserted AS (
+        INSERT INTO factstr.events (sequence_number, event_type, payload)
+        SELECT
+            base_sequence + event_data.ordinality,
+            event_data.event_value ->> 'event_type',
+            event_data.event_value -> 'payload'
+        FROM jsonb_array_elements(events) WITH ORDINALITY AS event_data(event_value, ordinality)
+        ORDER BY event_data.ordinality
+        RETURNING
+            factstr.events.sequence_number,
+            factstr.events.occurred_at,
+            factstr.events.event_type,
+            factstr.events.payload
+    ),
+    updated_metadata AS (
+        UPDATE factstr.metadata
+        SET current_sequence_number = base_sequence + event_count
+        WHERE id
+        RETURNING current_sequence_number
+    )
+    SELECT
+        inserted.sequence_number,
+        inserted.occurred_at,
+        inserted.event_type,
+        inserted.payload
+    FROM inserted
+    CROSS JOIN updated_metadata
+    ORDER BY inserted.sequence_number;
+END;
+$$;
