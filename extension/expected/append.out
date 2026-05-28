@@ -1,0 +1,48 @@
+\set VERBOSITY terse
+CREATE EXTENSION factstr;
+SELECT count(*) AS appended
+FROM factstr.append(
+    '[{"event_type":"account.created","payload":{"account_id":"acct_1"}}]'::jsonb
+);
+ appended 
+----------
+        1
+(1 row)
+
+SELECT count(*) AS appended
+FROM factstr.append(
+    '[
+        {"event_type":"account.credited","payload":{"account_id":"acct_1","amount":10}},
+        {"event_type":"account.debited","payload":{"account_id":"acct_1","amount":4}}
+    ]'::jsonb
+);
+ appended 
+----------
+        2
+(1 row)
+
+COPY (
+    SELECT sequence_number, event_type, payload
+    FROM factstr.events
+    ORDER BY sequence_number
+) TO STDOUT;
+1	account.created	{"account_id": "acct_1"}
+2	account.credited	{"amount": 10, "account_id": "acct_1"}
+3	account.debited	{"amount": 4, "account_id": "acct_1"}
+COPY (
+    SELECT current_sequence_number
+    FROM factstr.metadata
+) TO STDOUT;
+3
+SELECT factstr.append('{"event_type":"not-an-array","payload":{}}'::jsonb);
+ERROR:  events must be a JSON array
+SELECT factstr.append('[]'::jsonb);
+ERROR:  events must not be empty
+SELECT factstr.append('[{"payload":{}}]'::jsonb);
+ERROR:  event_type must be a non-empty string
+SELECT factstr.append('[{"event_type":"","payload":{}}]'::jsonb);
+ERROR:  event_type must be a non-empty string
+SELECT factstr.append('[{"event_type":"missing.payload"}]'::jsonb);
+ERROR:  payload must be a JSON object
+SELECT factstr.append('[{"event_type":"bad.payload","payload":[]}]'::jsonb);
+ERROR:  payload must be a JSON object
