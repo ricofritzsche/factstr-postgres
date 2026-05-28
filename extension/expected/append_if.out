@@ -1,0 +1,163 @@
+\set VERBOSITY terse
+DROP EXTENSION IF EXISTS factstr CASCADE;
+CREATE EXTENSION factstr;
+SELECT count(*) AS appended
+FROM factstr.append(
+    '[{"event_type":"tool.configured","payload":{"tool_id":"t-123","mode":"fast"}}]'::jsonb
+);
+ appended 
+----------
+        1
+(1 row)
+
+SELECT factstr.current_context_version(
+    ARRAY['tool.configured', 'tool.used'],
+    '{"tool_id":"t-123"}'
+) AS context_version;
+ context_version 
+-----------------
+               1
+(1 row)
+
+SELECT count(*) AS appended
+FROM factstr.append(
+    '[{"event_type":"other.happened","payload":{"other_id":"o-1"}}]'::jsonb
+);
+ appended 
+----------
+        1
+(1 row)
+
+SELECT factstr.current_context_version(
+    ARRAY['tool.configured', 'tool.used'],
+    '{"tool_id":"t-123"}'
+) AS context_version;
+ context_version 
+-----------------
+               1
+(1 row)
+
+COPY (
+    SELECT sequence_number, event_type, payload
+    FROM factstr.append_if(
+        '[{"event_type":"tool.used","payload":{"tool_id":"t-123","user_id":"u-1"}}]'::jsonb,
+        ARRAY['tool.configured', 'tool.used'],
+        '{"tool_id":"t-123"}',
+        1
+    )
+    ORDER BY sequence_number
+) TO STDOUT;
+3	tool.used	{"tool_id": "t-123", "user_id": "u-1"}
+COPY (
+    SELECT current_sequence_number
+    FROM factstr.metadata
+) TO STDOUT;
+3
+SELECT factstr.append_if(
+    '[{"event_type":"tool.used","payload":{"tool_id":"t-123","user_id":"u-2"}}]'::jsonb,
+    ARRAY['tool.configured', 'tool.used'],
+    '{"tool_id":"t-123"}',
+    1
+);
+ERROR:  conditional append conflict: expected 1, actual 3
+COPY (
+    SELECT sequence_number, event_type, payload
+    FROM factstr.events
+    ORDER BY sequence_number
+) TO STDOUT;
+1	tool.configured	{"mode": "fast", "tool_id": "t-123"}
+2	other.happened	{"other_id": "o-1"}
+3	tool.used	{"tool_id": "t-123", "user_id": "u-1"}
+COPY (
+    SELECT current_sequence_number
+    FROM factstr.metadata
+) TO STDOUT;
+3
+SELECT count(*) AS appended
+FROM factstr.append(
+    '[{"event_type":"other.happened","payload":{"other_id":"o-2"}}]'::jsonb
+);
+ appended 
+----------
+        1
+(1 row)
+
+SELECT factstr.current_context_version(
+    ARRAY['tool.configured', 'tool.used'],
+    '{"tool_id":"t-123"}'
+) AS context_version;
+ context_version 
+-----------------
+               3
+(1 row)
+
+COPY (
+    SELECT sequence_number, event_type, payload
+    FROM factstr.append_if(
+        '[{"event_type":"tool.used","payload":{"tool_id":"t-123","user_id":"u-3"}}]'::jsonb,
+        ARRAY['tool.configured', 'tool.used'],
+        '{"tool_id":"t-123"}',
+        3
+    )
+    ORDER BY sequence_number
+) TO STDOUT;
+5	tool.used	{"tool_id": "t-123", "user_id": "u-3"}
+COPY (
+    SELECT sequence_number, event_type, payload
+    FROM factstr.append_if(
+        '[{"event_type":"audit.logged","payload":{"scope":"all"}}]'::jsonb,
+        ARRAY['audit.logged'],
+        NULL,
+        0
+    )
+    ORDER BY sequence_number
+) TO STDOUT;
+6	audit.logged	{"scope": "all"}
+COPY (
+    SELECT sequence_number, event_type, payload
+    FROM factstr.append_if(
+        '[{"event_type":"empty.context.null","payload":{"ok":true}}]'::jsonb,
+        NULL,
+        '{"ignored":true}',
+        0
+    )
+    ORDER BY sequence_number
+) TO STDOUT;
+7	empty.context.null	{"ok": true}
+COPY (
+    SELECT sequence_number, event_type, payload
+    FROM factstr.append_if(
+        '[{"event_type":"empty.context.array","payload":{"ok":true}}]'::jsonb,
+        ARRAY[]::text[],
+        '{"ignored":true}',
+        0
+    )
+    ORDER BY sequence_number
+) TO STDOUT;
+8	empty.context.array	{"ok": true}
+SELECT factstr.append_if(
+    '[{"event_type":"bad.version","payload":{}}]'::jsonb,
+    ARRAY['bad.version'],
+    '{}'::jsonb,
+    NULL
+);
+ERROR:  expected_context_version must not be null
+SELECT factstr.append_if(
+    '[{"event_type":"bad.version","payload":{}}]'::jsonb,
+    ARRAY['bad.version'],
+    '{}'::jsonb,
+    -1
+);
+ERROR:  expected_context_version must be greater than or equal to 0
+SELECT factstr.append_if('{"event_type":"not-array","payload":{}}'::jsonb, ARRAY['bad.event'], '{}'::jsonb, 0);
+ERROR:  events must be a JSON array
+SELECT factstr.append_if('[]'::jsonb, ARRAY['bad.event'], '{}'::jsonb, 0);
+ERROR:  events must not be empty
+SELECT factstr.append_if('[{"payload":{}}]'::jsonb, ARRAY['bad.event'], '{}'::jsonb, 0);
+ERROR:  event_type must be a non-empty string
+SELECT factstr.append_if('[{"event_type":"","payload":{}}]'::jsonb, ARRAY['bad.event'], '{}'::jsonb, 0);
+ERROR:  event_type must be a non-empty string
+SELECT factstr.append_if('[{"event_type":"missing.payload"}]'::jsonb, ARRAY['bad.event'], '{}'::jsonb, 0);
+ERROR:  payload must be a JSON object
+SELECT factstr.append_if('[{"event_type":"bad.payload","payload":[]}]'::jsonb, ARRAY['bad.event'], '{}'::jsonb, 0);
+ERROR:  payload must be a JSON object
