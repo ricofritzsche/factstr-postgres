@@ -111,3 +111,47 @@ BEGIN
     ORDER BY inserted.sequence_number;
 END;
 $$;
+
+CREATE FUNCTION factstr.query(
+    event_types text[],
+    payload_predicates jsonb DEFAULT '{}'::jsonb,
+    min_sequence_number bigint DEFAULT 1
+)
+RETURNS TABLE (
+    sequence_number bigint,
+    occurred_at timestamptz,
+    event_type text,
+    payload jsonb
+)
+LANGUAGE sql
+STABLE
+AS $$
+    SELECT
+        events.sequence_number,
+        events.occurred_at,
+        events.event_type,
+        events.payload
+    FROM factstr.events
+    WHERE cardinality(event_types) > 0
+      AND events.event_type = ANY (event_types)
+      AND events.payload @> COALESCE(payload_predicates, '{}'::jsonb)
+      AND events.sequence_number >= GREATEST(COALESCE(min_sequence_number, 1), 1)
+    ORDER BY events.sequence_number ASC;
+$$;
+
+-- current_context_version is not a read cursor; it must be calculated over the
+-- full command context selected by event types and payload predicates.
+CREATE FUNCTION factstr.current_context_version(
+    event_types text[],
+    payload_predicates jsonb DEFAULT '{}'::jsonb
+)
+RETURNS bigint
+LANGUAGE sql
+STABLE
+AS $$
+    SELECT COALESCE(MAX(events.sequence_number), 0)
+    FROM factstr.events
+    WHERE cardinality(event_types) > 0
+      AND events.event_type = ANY (event_types)
+      AND events.payload @> COALESCE(payload_predicates, '{}'::jsonb);
+$$;
