@@ -1,0 +1,5 @@
+-- FACTSTR PostgreSQL extension
+-- Version: 0.1.0
+--
+-- This initial version only establishes the extension package.
+-- Runtime schema, tables, and functions will be added in a later change.
