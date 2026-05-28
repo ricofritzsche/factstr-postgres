@@ -1,0 +1,47 @@
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# PostgreSQL extension build artifacts
+*.o
+*.so
+*.dylib
+*.dll
+*.bc
+*.a
+*.la
+*.lo
+*.gcda
+*.gcno
+*.gcov
+*.profraw
+*.profdata
+*.tmp
+*.log
+
+# PGXS and generated build output
+results/
+regression.diffs
+regression.out
+tmp_check/
+tmp_install/
+install/
+coverage/
+html/
+
+# Packaging
+*.tar.gz
+*.zip
+*.tgz
+
+# Local environment
+.env
+.env.*
+!.env.example
