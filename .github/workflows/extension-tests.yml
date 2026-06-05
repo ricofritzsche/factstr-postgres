@@ -1,0 +1,48 @@
+name: Extension Tests
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "extension/**"
+      - ".github/workflows/extension-tests.yml"
+  pull_request:
+    paths:
+      - "extension/**"
+      - ".github/workflows/extension-tests.yml"
+  workflow_dispatch:
+
+jobs:
+  extension-tests:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install PostgreSQL development tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-server-dev-16 postgresql-client-16
+
+      - name: Install extension
+        run: make -C extension PG_CONFIG=/usr/lib/postgresql/16/bin/pg_config install
+
+      - name: Run regression tests
+        run: make -C extension PG_CONFIG=/usr/lib/postgresql/16/bin/pg_config installcheck PGHOST=localhost PGPORT=5432 PGUSER=postgres PGPASSWORD=postgres
