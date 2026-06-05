@@ -161,3 +161,228 @@ SELECT factstr.append_if('[{"event_type":"missing.payload"}]'::jsonb, ARRAY['bad
 ERROR:  payload must be a JSON object
 SELECT factstr.append_if('[{"event_type":"bad.payload","payload":[]}]'::jsonb, ARRAY['bad.event'], '{}'::jsonb, 0);
 ERROR:  payload must be a JSON object
+COPY (
+    SELECT sequence_number, event_type, payload
+    FROM factstr.append_if(
+        '[{"event_type":"json.tool.used","payload":{"tool_id":"t-123","user_id":"u-4"}}]'::jsonb,
+        '{
+            "filters": [
+                {
+                    "event_types": ["tool.configured", "tool.used", "json.tool.used"],
+                    "payload_predicates": [{"tool_id":"t-123"}]
+                }
+            ]
+        }'::jsonb,
+        5
+    )
+    ORDER BY sequence_number
+) TO STDOUT;
+9	json.tool.used	{"tool_id": "t-123", "user_id": "u-4"}
+COPY (
+    SELECT current_sequence_number
+    FROM factstr.metadata
+) TO STDOUT;
+9
+SELECT factstr.append_if(
+    '[{"event_type":"json.tool.used","payload":{"tool_id":"t-123","user_id":"u-5"}}]'::jsonb,
+    '{
+        "filters": [
+            {
+                "event_types": ["tool.configured", "tool.used", "json.tool.used"],
+                "payload_predicates": [{"tool_id":"t-123"}]
+            }
+        ]
+    }'::jsonb,
+    5
+);
+ERROR:  conditional append conflict: expected 5, actual 9
+COPY (
+    SELECT sequence_number, event_type, payload
+    FROM factstr.events
+    WHERE event_type = 'json.tool.used'
+    ORDER BY sequence_number
+) TO STDOUT;
+9	json.tool.used	{"tool_id": "t-123", "user_id": "u-4"}
+COPY (
+    SELECT current_sequence_number
+    FROM factstr.metadata
+) TO STDOUT;
+9
+COPY (
+    SELECT sequence_number, event_type, payload
+    FROM factstr.append_if(
+        '[{"event_type":"json.tool.used","payload":{"tool_id":"t-123","user_id":"u-6"}}]'::jsonb,
+        '{
+            "filters": [
+                {
+                    "event_types": ["tool.configured", "tool.used", "json.tool.used"],
+                    "payload_predicates": [{"tool_id":"t-123"}]
+                }
+            ],
+            "min_sequence_number": 9
+        }'::jsonb,
+        9
+    )
+    ORDER BY sequence_number
+) TO STDOUT;
+10	json.tool.used	{"tool_id": "t-123", "user_id": "u-6"}
+COPY (
+    SELECT sequence_number, event_type, payload
+    FROM factstr.append_if(
+        '[{"event_type":"json.full.omitted","payload":{"ok":true}}]'::jsonb,
+        '{}'::jsonb,
+        10
+    )
+    ORDER BY sequence_number
+) TO STDOUT;
+11	json.full.omitted	{"ok": true}
+COPY (
+    SELECT sequence_number, event_type, payload
+    FROM factstr.append_if(
+        '[{"event_type":"json.full.empty","payload":{"ok":true}}]'::jsonb,
+        '{"filters":[]}'::jsonb,
+        11
+    )
+    ORDER BY sequence_number
+) TO STDOUT;
+12	json.full.empty	{"ok": true}
+COPY (
+    SELECT sequence_number, event_type, payload
+    FROM factstr.append_if(
+        '[{"event_type":"json.or.filters","payload":{"ok":true}}]'::jsonb,
+        '{
+            "filters": [
+                {"event_types": ["audit.logged"]},
+                {"event_types": ["empty.context.array"]}
+            ]
+        }'::jsonb,
+        8
+    )
+    ORDER BY sequence_number
+) TO STDOUT;
+13	json.or.filters	{"ok": true}
+COPY (
+    SELECT sequence_number, event_type, payload
+    FROM factstr.append_if(
+        '[{"event_type":"json.or.event_types","payload":{"ok":true}}]'::jsonb,
+        '{
+            "filters": [
+                {"event_types": ["tool.configured", "json.full.omitted"]}
+            ]
+        }'::jsonb,
+        11
+    )
+    ORDER BY sequence_number
+) TO STDOUT;
+14	json.or.event_types	{"ok": true}
+COPY (
+    SELECT sequence_number, event_type, payload
+    FROM factstr.append_if(
+        '[{"event_type":"json.or.payloads","payload":{"ok":true}}]'::jsonb,
+        '{
+            "filters": [
+                {
+                    "event_types": ["other.happened"],
+                    "payload_predicates": [{"other_id":"o-1"}, {"other_id":"o-2"}]
+                }
+            ]
+        }'::jsonb,
+        4
+    )
+    ORDER BY sequence_number
+) TO STDOUT;
+15	json.or.payloads	{"ok": true}
+COPY (
+    SELECT sequence_number, event_type, payload
+    FROM factstr.append_if(
+        '[{"event_type":"json.and.filter","payload":{"ok":true}}]'::jsonb,
+        '{
+            "filters": [
+                {
+                    "event_types": ["other.happened"],
+                    "payload_predicates": [{"other_id":"o-2"}]
+                }
+            ]
+        }'::jsonb,
+        4
+    )
+    ORDER BY sequence_number
+) TO STDOUT;
+16	json.and.filter	{"ok": true}
+COPY (
+    SELECT sequence_number, event_type, payload
+    FROM factstr.append_if(
+        '[{"event_type":"json.empty.event_types","payload":{"ok":true}}]'::jsonb,
+        '{"filters":[{"event_types":[]}]}'::jsonb,
+        0
+    )
+    ORDER BY sequence_number
+) TO STDOUT;
+17	json.empty.event_types	{"ok": true}
+COPY (
+    SELECT sequence_number, event_type, payload
+    FROM factstr.append_if(
+        '[{"event_type":"json.empty.payload_predicates","payload":{"ok":true}}]'::jsonb,
+        '{"filters":[{"payload_predicates":[]}]}'::jsonb,
+        0
+    )
+    ORDER BY sequence_number
+) TO STDOUT;
+18	json.empty.payload_predicates	{"ok": true}
+COPY (
+    SELECT sequence_number, event_type, payload
+    FROM factstr.append_if(
+        '[{"event_type":"json.selected","payload":{"selected_id":"s-1"}}]'::jsonb,
+        '{"filters":[{"event_types":["json.selected"],"payload_predicates":[{"selected_id":"s-1"}]}]}'::jsonb,
+        0
+    )
+    ORDER BY sequence_number
+) TO STDOUT;
+19	json.selected	{"selected_id": "s-1"}
+COPY (
+    SELECT count(*)
+    FROM factstr.append(
+        '[{"event_type":"json.unrelated","payload":{"selected_id":"s-1"}}]'::jsonb
+    )
+) TO STDOUT;
+1
+COPY (
+    SELECT sequence_number, event_type, payload
+    FROM factstr.append_if(
+        '[{"event_type":"json.selected","payload":{"selected_id":"s-1","step":2}}]'::jsonb,
+        '{"filters":[{"event_types":["json.selected"],"payload_predicates":[{"selected_id":"s-1"}]}]}'::jsonb,
+        19
+    )
+    ORDER BY sequence_number
+) TO STDOUT;
+21	json.selected	{"step": 2, "selected_id": "s-1"}
+SELECT factstr.append_if(
+    '[{"event_type":"json.bad.context","payload":{}}]'::jsonb,
+    '[]'::jsonb,
+    0
+);
+ERROR:  event_query must be a JSON object
+SELECT factstr.append_if(
+    '[{"event_type":"json.bad.version","payload":{}}]'::jsonb,
+    '{}'::jsonb,
+    NULL
+);
+ERROR:  expected_context_version must not be null
+SELECT factstr.append_if(
+    '[{"event_type":"json.bad.version","payload":{}}]'::jsonb,
+    '{}'::jsonb,
+    -1
+);
+ERROR:  expected_context_version must be greater than or equal to 0
+SELECT factstr.append_if('{"event_type":"not-array","payload":{}}'::jsonb, '{}'::jsonb, 0);
+ERROR:  events must be a JSON array
+SELECT factstr.append_if('[]'::jsonb, '{}'::jsonb, 0);
+ERROR:  events must not be empty
+SELECT factstr.append_if('[{"payload":{}}]'::jsonb, '{}'::jsonb, 0);
+ERROR:  event_type must be a non-empty string
+SELECT factstr.append_if('[{"event_type":"","payload":{}}]'::jsonb, '{}'::jsonb, 0);
+ERROR:  event_type must be a non-empty string
+SELECT factstr.append_if('[{"event_type":"missing.payload"}]'::jsonb, '{}'::jsonb, 0);
+ERROR:  payload must be a JSON object
+SELECT factstr.append_if('[{"event_type":"bad.payload","payload":[]}]'::jsonb, '{}'::jsonb, 0);
+ERROR:  payload must be a JSON object
