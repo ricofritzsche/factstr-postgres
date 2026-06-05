@@ -32,3 +32,21 @@ SELECT factstr.append('[{"payload":{}}]'::jsonb);
 SELECT factstr.append('[{"event_type":"","payload":{}}]'::jsonb);
 SELECT factstr.append('[{"event_type":"missing.payload"}]'::jsonb);
 SELECT factstr.append('[{"event_type":"bad.payload","payload":[]}]'::jsonb);
+
+COPY (
+    SELECT current_sequence_number
+    FROM factstr.metadata
+) TO STDOUT;
+
+COPY (
+    SELECT sequence_number, event_type, payload
+    FROM factstr.append(
+        '[{"event_type":"account.closed","payload":{"account_id":"acct_1"}}]'::jsonb
+    )
+    ORDER BY sequence_number
+) TO STDOUT;
+
+COPY (
+    SELECT current_sequence_number
+    FROM factstr.metadata
+) TO STDOUT;
