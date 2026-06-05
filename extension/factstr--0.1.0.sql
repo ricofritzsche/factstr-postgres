@@ -206,19 +206,15 @@ AS $$
     FROM returned_events;
 $$;
 
-CREATE FUNCTION factstr.query_result(event_query jsonb)
-RETURNS TABLE (
-    event_records jsonb,
-    last_returned_sequence_number bigint,
-    current_context_version bigint
-)
+CREATE FUNCTION factstr._current_context_version(event_query jsonb)
+RETURNS bigint
 LANGUAGE plpgsql
 STABLE
 AS $$
 DECLARE
     normalized_filters jsonb;
-    min_sequence bigint;
     filters_match_all boolean;
+    min_sequence bigint;
 BEGIN
     IF jsonb_typeof(event_query) IS DISTINCT FROM 'object' THEN
         RAISE EXCEPTION 'event_query must be a JSON object';
@@ -295,6 +291,58 @@ BEGIN
         RAISE EXCEPTION 'min_sequence_number must be greater than or equal to 0';
     END IF;
 
+    RETURN (
+        WITH matching_context AS (
+            SELECT events.sequence_number
+            FROM factstr.events
+            WHERE filters_match_all
+               OR EXISTS (
+                   SELECT 1
+                   FROM jsonb_array_elements(normalized_filters) AS filter_data(filter_value)
+                   WHERE (
+                       NOT (filter_value ? 'event_types')
+                       OR EXISTS (
+                           SELECT 1
+                           FROM jsonb_array_elements_text(filter_value -> 'event_types') AS event_type_data(event_type_value)
+                           WHERE events.event_type = event_type_data.event_type_value
+                       )
+                   )
+                   AND (
+                       NOT (filter_value ? 'payload_predicates')
+                       OR EXISTS (
+                           SELECT 1
+                           FROM jsonb_array_elements(filter_value -> 'payload_predicates') AS predicate_data(predicate_value)
+                           WHERE events.payload @> predicate_data.predicate_value
+                       )
+                   )
+               )
+        )
+        SELECT MAX(matching_context.sequence_number)
+        FROM matching_context
+    );
+END;
+$$;
+
+CREATE FUNCTION factstr.query_result(event_query jsonb)
+RETURNS TABLE (
+    event_records jsonb,
+    last_returned_sequence_number bigint,
+    current_context_version bigint
+)
+LANGUAGE plpgsql
+STABLE
+AS $$
+DECLARE
+    normalized_filters jsonb;
+    min_sequence bigint;
+    filters_match_all boolean;
+    actual_context_version bigint;
+BEGIN
+    actual_context_version := factstr._current_context_version(event_query);
+    normalized_filters := COALESCE(event_query -> 'filters', '[]'::jsonb);
+    filters_match_all := NOT (event_query ? 'filters') OR jsonb_array_length(normalized_filters) = 0;
+    min_sequence := COALESCE((event_query ->> 'min_sequence_number')::bigint, 0);
+
     RETURN QUERY
     WITH matching_context AS (
         SELECT
@@ -348,7 +396,7 @@ BEGIN
             '[]'::jsonb
         ) AS event_records,
         MAX(returned_events.sequence_number) AS last_returned_sequence_number,
-        (SELECT MAX(matching_context.sequence_number) FROM matching_context) AS current_context_version
+        actual_context_version AS current_context_version
     FROM returned_events;
 END;
 $$;

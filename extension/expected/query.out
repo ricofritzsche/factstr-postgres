@@ -452,6 +452,26 @@ FROM factstr.query_result('{"filters":[{"event_types":["account.missing"]}]}'::j
  []            | t                | t
 (1 row)
 
+SELECT factstr._current_context_version('{}'::jsonb) AS context_version;
+ context_version 
+-----------------
+               6
+(1 row)
+
+SELECT factstr._current_context_version('{"filters": [], "min_sequence_number": 3}'::jsonb) AS context_version;
+ context_version 
+-----------------
+               6
+(1 row)
+
+SELECT factstr._current_context_version('{"filters":[{"event_types":["account.missing"]}]}'::jsonb) IS NULL AS no_context;
+ no_context 
+------------
+ t
+(1 row)
+
+SELECT factstr._current_context_version('[]'::jsonb);
+ERROR:  event_query must be a JSON object
 SELECT factstr.query_result('[]'::jsonb);
 ERROR:  event_query must be a JSON object
 SELECT factstr.query_result('{"filters":{}}'::jsonb);

@@ -350,6 +350,11 @@ FROM factstr.query_result(
 SELECT event_records, last_returned_sequence_number IS NULL AS no_last_returned, current_context_version IS NULL AS no_context
 FROM factstr.query_result('{"filters":[{"event_types":["account.missing"]}]}'::jsonb);
 
+SELECT factstr._current_context_version('{}'::jsonb) AS context_version;
+SELECT factstr._current_context_version('{"filters": [], "min_sequence_number": 3}'::jsonb) AS context_version;
+SELECT factstr._current_context_version('{"filters":[{"event_types":["account.missing"]}]}'::jsonb) IS NULL AS no_context;
+SELECT factstr._current_context_version('[]'::jsonb);
+
 SELECT factstr.query_result('[]'::jsonb);
 SELECT factstr.query_result('{"filters":{}}'::jsonb);
 SELECT factstr.query_result('{"filters":[[]]}'::jsonb);
