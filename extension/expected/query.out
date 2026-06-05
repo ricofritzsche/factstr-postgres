@@ -51,7 +51,12 @@ COPY (
     FROM factstr.query(ARRAY['account.created', 'account.credited'], '{}'::jsonb, 5)
     ORDER BY sequence_number
 ) TO STDOUT;
-5	account.credited	{"amount": 7, "region": "us", "account_id": "acct_2"}
+COPY (
+    SELECT sequence_number, event_type, payload
+    FROM factstr.query(ARRAY['account.created'], '{}'::jsonb, 3)
+    ORDER BY sequence_number
+) TO STDOUT;
+4	account.created	{"region": "us", "account_id": "acct_2"}
 SELECT factstr.current_context_version(
     ARRAY['account.created', 'account.credited', 'account.debited'],
     '{"account_id":"acct_1"}'
@@ -70,7 +75,6 @@ COPY (
     )
     ORDER BY sequence_number
 ) TO STDOUT;
-3	account.debited	{"amount": 4, "region": "eu", "account_id": "acct_1"}
 SELECT factstr.current_context_version(
     ARRAY['account.created', 'account.credited', 'account.debited'],
     '{"account_id":"acct_1"}'

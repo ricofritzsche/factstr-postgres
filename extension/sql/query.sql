@@ -45,6 +45,12 @@ COPY (
     ORDER BY sequence_number
 ) TO STDOUT;
 
+COPY (
+    SELECT sequence_number, event_type, payload
+    FROM factstr.query(ARRAY['account.created'], '{}'::jsonb, 3)
+    ORDER BY sequence_number
+) TO STDOUT;
+
 SELECT factstr.current_context_version(
     ARRAY['account.created', 'account.credited', 'account.debited'],
     '{"account_id":"acct_1"}'

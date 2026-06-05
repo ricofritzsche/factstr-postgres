@@ -115,7 +115,7 @@ $$;
 CREATE FUNCTION factstr.query(
     event_types text[],
     payload_predicates jsonb DEFAULT '{}'::jsonb,
-    min_sequence_number bigint DEFAULT 1
+    min_sequence_number bigint DEFAULT 0
 )
 RETURNS TABLE (
     sequence_number bigint,
@@ -135,7 +135,7 @@ AS $$
     WHERE cardinality(event_types) > 0
       AND events.event_type = ANY (event_types)
       AND events.payload @> COALESCE(payload_predicates, '{}'::jsonb)
-      AND events.sequence_number >= GREATEST(COALESCE(min_sequence_number, 1), 1)
+      AND events.sequence_number > GREATEST(COALESCE(min_sequence_number, 0), 0)
     ORDER BY events.sequence_number ASC;
 $$;
 
