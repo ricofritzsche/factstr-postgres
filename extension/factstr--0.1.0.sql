@@ -156,6 +156,56 @@ AS $$
       AND events.payload @> COALESCE(payload_predicates, '{}'::jsonb);
 $$;
 
+CREATE FUNCTION factstr.query_result(
+    event_types text[],
+    payload_predicates jsonb DEFAULT '{}'::jsonb,
+    min_sequence_number bigint DEFAULT 0
+)
+RETURNS TABLE (
+    event_records jsonb,
+    last_returned_sequence_number bigint,
+    current_context_version bigint
+)
+LANGUAGE sql
+STABLE
+AS $$
+    WITH returned_events AS (
+        SELECT
+            events.sequence_number,
+            events.occurred_at,
+            events.event_type,
+            events.payload
+        FROM factstr.events
+        WHERE cardinality(event_types) > 0
+          AND events.event_type = ANY (event_types)
+          AND events.payload @> COALESCE(payload_predicates, '{}'::jsonb)
+          AND events.sequence_number > GREATEST(COALESCE(min_sequence_number, 0), 0)
+    ),
+    full_context AS (
+        SELECT events.sequence_number
+        FROM factstr.events
+        WHERE cardinality(event_types) > 0
+          AND events.event_type = ANY (event_types)
+          AND events.payload @> COALESCE(payload_predicates, '{}'::jsonb)
+    )
+    SELECT
+        COALESCE(
+            jsonb_agg(
+                jsonb_build_object(
+                    'sequence_number', returned_events.sequence_number,
+                    'occurred_at', returned_events.occurred_at,
+                    'event_type', returned_events.event_type,
+                    'payload', returned_events.payload
+                )
+                ORDER BY returned_events.sequence_number ASC
+            ) FILTER (WHERE returned_events.sequence_number IS NOT NULL),
+            '[]'::jsonb
+        ) AS event_records,
+        MAX(returned_events.sequence_number) AS last_returned_sequence_number,
+        (SELECT MAX(full_context.sequence_number) FROM full_context) AS current_context_version
+    FROM returned_events;
+$$;
+
 -- append_if is the FACTSTR command context consistency primitive.
 -- The context version is evaluated over the full command context and is not
 -- affected by a read cursor.

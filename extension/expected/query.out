@@ -133,3 +133,93 @@ COPY (
 ) TO STDOUT;
 1	account.created	{"region": "eu", "account_id": "acct_1"}
 4	account.created	{"region": "us", "account_id": "acct_2"}
+SELECT count(*) AS result_rows
+FROM factstr.query_result(
+    ARRAY['account.created', 'account.credited', 'account.debited'],
+    '{"account_id":"acct_1"}',
+    1
+);
+ result_rows 
+-------------
+           1
+(1 row)
+
+COPY (
+    WITH result AS (
+        SELECT event_records
+        FROM factstr.query_result(
+            ARRAY['account.created', 'account.credited', 'account.debited'],
+            '{"account_id":"acct_1"}',
+            1
+        )
+    )
+    SELECT
+        event_record.ordinality,
+        event_record.value ->> 'sequence_number',
+        event_record.value ->> 'event_type',
+        event_record.value -> 'payload',
+        event_record.value ? 'occurred_at'
+    FROM result,
+         jsonb_array_elements(result.event_records) WITH ORDINALITY AS event_record(value, ordinality)
+    ORDER BY event_record.ordinality
+) TO STDOUT;
+1	2	account.credited	{"amount": 10, "region": "eu", "account_id": "acct_1"}	t
+2	3	account.debited	{"amount": 4, "region": "eu", "account_id": "acct_1"}	t
+SELECT last_returned_sequence_number, current_context_version
+FROM factstr.query_result(
+    ARRAY['account.created', 'account.credited', 'account.debited'],
+    '{"account_id":"acct_1"}',
+    1
+);
+ last_returned_sequence_number | current_context_version 
+-------------------------------+-------------------------
+                             3 |                       3
+(1 row)
+
+SELECT event_records, last_returned_sequence_number IS NULL AS no_last_returned, current_context_version
+FROM factstr.query_result(
+    ARRAY['account.created', 'account.credited', 'account.debited'],
+    '{"account_id":"acct_1"}',
+    3
+);
+ event_records | no_last_returned | current_context_version 
+---------------+------------------+-------------------------
+ []            | t                |                       3
+(1 row)
+
+COPY (
+    WITH result AS (
+        SELECT event_records
+        FROM factstr.query_result(ARRAY['account.created'], NULL)
+    )
+    SELECT
+        event_record.ordinality,
+        event_record.value ->> 'sequence_number',
+        event_record.value ->> 'event_type'
+    FROM result,
+         jsonb_array_elements(result.event_records) WITH ORDINALITY AS event_record(value, ordinality)
+    ORDER BY event_record.ordinality
+) TO STDOUT;
+1	1	account.created
+2	4	account.created
+SELECT event_records, last_returned_sequence_number IS NULL AS no_last_returned, current_context_version IS NULL AS no_context
+FROM factstr.query_result(NULL, '{}'::jsonb);
+ event_records | no_last_returned | no_context 
+---------------+------------------+------------
+ []            | t                | t
+(1 row)
+
+SELECT event_records, last_returned_sequence_number IS NULL AS no_last_returned, current_context_version IS NULL AS no_context
+FROM factstr.query_result(ARRAY[]::text[], '{}'::jsonb);
+ event_records | no_last_returned | no_context 
+---------------+------------------+------------
+ []            | t                | t
+(1 row)
+
+SELECT event_records, last_returned_sequence_number IS NULL AS no_last_returned, current_context_version IS NULL AS no_context
+FROM factstr.query_result(ARRAY['account.missing'], '{}'::jsonb);
+ event_records | no_last_returned | no_context 
+---------------+------------------+------------
+ []            | t                | t
+(1 row)
+
