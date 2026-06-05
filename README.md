@@ -4,39 +4,31 @@
 
 FACTSTR PostgreSQL provides a PostgreSQL-native runtime for FACTSTR event storage and command context consistency.
 
-The extension provides FACTSTR semantics inside PostgreSQL. It includes a
-convenience API for simple single-filter SQL usage and a contract API based on
-JSON EventQuery. JSON EventQuery is the preferred long-term API shape; the
-single-filter functions remain useful for direct SQL inspection and simple
-queries.
+The extension provides FACTSTR semantics inside PostgreSQL through a small API
+aligned with the FACTSTR Rust contract. It uses JSON EventQuery for query and
+command context selection. The API is intentionally small because the extension
+is not published yet.
 
 ## Current API
 
-Convenience API:
+Core API:
 
 ```sql
 factstr.append(events jsonb)
-factstr.query(event_types text[], payload_predicates jsonb, min_sequence_number bigint)
-factstr.query_result(event_types text[], payload_predicates jsonb, min_sequence_number bigint)
-factstr.current_context_version(event_types text[], payload_predicates jsonb)
-factstr.append_if(events jsonb, context_event_types text[], context_payload_predicates jsonb, expected_context_version bigint)
-```
-
-Contract API:
-
-```sql
-factstr.query_result(event_query jsonb)
+factstr.query(event_query jsonb)
 factstr.append_if(events jsonb, context_query jsonb, expected_context_version bigint)
 ```
 
-Internal helper:
+Internal implementation helper:
 
 ```sql
 factstr._current_context_version(event_query jsonb)
 ```
 
-The internal helper is used by the extension implementation and is not intended
-as the public API.
+`factstr.query(event_query jsonb)` aligns with the FACTSTR Rust
+`query(...) -> QueryResult` contract. There is no single-filter convenience API
+and no separate query result API. The internal helper is used by the extension
+implementation and is not intended as the public API.
 
 ## JSON EventQuery
 
@@ -72,7 +64,7 @@ Semantics:
 ## Query Result
 
 ```sql
-factstr.query_result(event_query jsonb)
+factstr.query(event_query jsonb)
 ```
 
 Returns exactly one row with:
@@ -112,7 +104,7 @@ FROM factstr.append(
 
 ```sql
 SELECT *
-FROM factstr.query_result(
+FROM factstr.query(
   '{
     "filters": [
       {
