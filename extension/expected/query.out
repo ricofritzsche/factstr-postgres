@@ -223,3 +223,252 @@ FROM factstr.query_result(ARRAY['account.missing'], '{}'::jsonb);
  []            | t                | t
 (1 row)
 
+SELECT count(*) AS result_rows
+FROM factstr.query_result('{}'::jsonb);
+ result_rows 
+-------------
+           1
+(1 row)
+
+SELECT jsonb_array_length(event_records) AS record_count,
+       last_returned_sequence_number,
+       current_context_version
+FROM factstr.query_result('{}'::jsonb);
+ record_count | last_returned_sequence_number | current_context_version 
+--------------+-------------------------------+-------------------------
+            6 |                             6 |                       6
+(1 row)
+
+COPY (
+    WITH result AS (
+        SELECT event_records
+        FROM factstr.query_result('{"filters":[]}'::jsonb)
+    )
+    SELECT
+        event_record.ordinality,
+        event_record.value ->> 'sequence_number',
+        event_record.value ->> 'event_type'
+    FROM result,
+         jsonb_array_elements(result.event_records) WITH ORDINALITY AS event_record(value, ordinality)
+    ORDER BY event_record.ordinality
+) TO STDOUT;
+1	1	account.created
+2	2	account.credited
+3	3	account.debited
+4	4	account.created
+5	5	account.credited
+6	6	invoice.created
+COPY (
+    WITH result AS (
+        SELECT event_records
+        FROM factstr.query_result('{"filters":[{"payload_predicates":[{"region":"eu"}]}]}'::jsonb)
+    )
+    SELECT
+        event_record.ordinality,
+        event_record.value ->> 'sequence_number',
+        event_record.value ->> 'event_type'
+    FROM result,
+         jsonb_array_elements(result.event_records) WITH ORDINALITY AS event_record(value, ordinality)
+    ORDER BY event_record.ordinality
+) TO STDOUT;
+1	1	account.created
+2	2	account.credited
+3	3	account.debited
+COPY (
+    WITH result AS (
+        SELECT event_records
+        FROM factstr.query_result('{"filters":[{"event_types":["account.created"]}]}'::jsonb)
+    )
+    SELECT
+        event_record.ordinality,
+        event_record.value ->> 'sequence_number',
+        event_record.value ->> 'event_type'
+    FROM result,
+         jsonb_array_elements(result.event_records) WITH ORDINALITY AS event_record(value, ordinality)
+    ORDER BY event_record.ordinality
+) TO STDOUT;
+1	1	account.created
+2	4	account.created
+COPY (
+    WITH result AS (
+        SELECT event_records
+        FROM factstr.query_result(
+            '{
+                "filters": [
+                    {
+                        "event_types": ["account.created"],
+                        "payload_predicates": [{"account_id":"acct_2"}]
+                    },
+                    {
+                        "event_types": ["invoice.created"],
+                        "payload_predicates": [{"account_id":"acct_1"}]
+                    }
+                ]
+            }'::jsonb
+        )
+    )
+    SELECT
+        event_record.ordinality,
+        event_record.value ->> 'sequence_number',
+        event_record.value ->> 'event_type'
+    FROM result,
+         jsonb_array_elements(result.event_records) WITH ORDINALITY AS event_record(value, ordinality)
+    ORDER BY event_record.ordinality
+) TO STDOUT;
+1	4	account.created
+2	6	invoice.created
+COPY (
+    WITH result AS (
+        SELECT event_records
+        FROM factstr.query_result(
+            '{
+                "filters": [
+                    {
+                        "event_types": ["account.credited", "account.debited"],
+                        "payload_predicates": [{"account_id":"acct_1"}]
+                    }
+                ]
+            }'::jsonb
+        )
+    )
+    SELECT
+        event_record.ordinality,
+        event_record.value ->> 'sequence_number',
+        event_record.value ->> 'event_type'
+    FROM result,
+         jsonb_array_elements(result.event_records) WITH ORDINALITY AS event_record(value, ordinality)
+    ORDER BY event_record.ordinality
+) TO STDOUT;
+1	2	account.credited
+2	3	account.debited
+COPY (
+    WITH result AS (
+        SELECT event_records
+        FROM factstr.query_result(
+            '{
+                "filters": [
+                    {
+                        "event_types": ["account.created"],
+                        "payload_predicates": [{"account_id":"acct_1"}, {"region":"us"}]
+                    }
+                ]
+            }'::jsonb
+        )
+    )
+    SELECT
+        event_record.ordinality,
+        event_record.value ->> 'sequence_number',
+        event_record.value ->> 'event_type',
+        event_record.value -> 'payload'
+    FROM result,
+         jsonb_array_elements(result.event_records) WITH ORDINALITY AS event_record(value, ordinality)
+    ORDER BY event_record.ordinality
+) TO STDOUT;
+1	1	account.created	{"region": "eu", "account_id": "acct_1"}
+2	4	account.created	{"region": "us", "account_id": "acct_2"}
+COPY (
+    WITH result AS (
+        SELECT event_records
+        FROM factstr.query_result(
+            '{
+                "filters": [
+                    {
+                        "event_types": ["account.credited"],
+                        "payload_predicates": [{"region":"us"}]
+                    }
+                ]
+            }'::jsonb
+        )
+    )
+    SELECT
+        event_record.ordinality,
+        event_record.value ->> 'sequence_number',
+        event_record.value ->> 'event_type',
+        event_record.value -> 'payload'
+    FROM result,
+         jsonb_array_elements(result.event_records) WITH ORDINALITY AS event_record(value, ordinality)
+    ORDER BY event_record.ordinality
+) TO STDOUT;
+1	5	account.credited	{"amount": 7, "region": "us", "account_id": "acct_2"}
+SELECT event_records, last_returned_sequence_number IS NULL AS no_last_returned, current_context_version IS NULL AS no_context
+FROM factstr.query_result('{"filters":[{"event_types":[]}]}'::jsonb);
+ event_records | no_last_returned | no_context 
+---------------+------------------+------------
+ []            | t                | t
+(1 row)
+
+SELECT event_records, last_returned_sequence_number IS NULL AS no_last_returned, current_context_version IS NULL AS no_context
+FROM factstr.query_result('{"filters":[{"payload_predicates":[]}]}'::jsonb);
+ event_records | no_last_returned | no_context 
+---------------+------------------+------------
+ []            | t                | t
+(1 row)
+
+SELECT last_returned_sequence_number, current_context_version
+FROM factstr.query_result('{"filters": [], "min_sequence_number": 3}'::jsonb);
+ last_returned_sequence_number | current_context_version 
+-------------------------------+-------------------------
+                             6 |                       6
+(1 row)
+
+COPY (
+    WITH result AS (
+        SELECT event_records
+        FROM factstr.query_result('{"filters": [], "min_sequence_number": 3}'::jsonb)
+    )
+    SELECT
+        event_record.ordinality,
+        event_record.value ->> 'sequence_number',
+        event_record.value ->> 'event_type',
+        event_record.value ? 'occurred_at'
+    FROM result,
+         jsonb_array_elements(result.event_records) WITH ORDINALITY AS event_record(value, ordinality)
+    ORDER BY event_record.ordinality
+) TO STDOUT;
+1	4	account.created	t
+2	5	account.credited	t
+3	6	invoice.created	t
+SELECT event_records, last_returned_sequence_number IS NULL AS no_last_returned, current_context_version
+FROM factstr.query_result(
+    '{
+        "filters": [
+            {
+                "event_types": ["account.created", "account.credited", "account.debited"],
+                "payload_predicates": [{"account_id":"acct_1"}]
+            }
+        ],
+        "min_sequence_number": 3
+    }'::jsonb
+);
+ event_records | no_last_returned | current_context_version 
+---------------+------------------+-------------------------
+ []            | t                |                       3
+(1 row)
+
+SELECT event_records, last_returned_sequence_number IS NULL AS no_last_returned, current_context_version IS NULL AS no_context
+FROM factstr.query_result('{"filters":[{"event_types":["account.missing"]}]}'::jsonb);
+ event_records | no_last_returned | no_context 
+---------------+------------------+------------
+ []            | t                | t
+(1 row)
+
+SELECT factstr.query_result('[]'::jsonb);
+ERROR:  event_query must be a JSON object
+SELECT factstr.query_result('{"filters":{}}'::jsonb);
+ERROR:  filters must be an array
+SELECT factstr.query_result('{"filters":[[]]}'::jsonb);
+ERROR:  filter must be a JSON object
+SELECT factstr.query_result('{"filters":[{"event_types":"account.created"}]}'::jsonb);
+ERROR:  event_types must be an array
+SELECT factstr.query_result('{"filters":[{"event_types":[""]}]}'::jsonb);
+ERROR:  event_type must be a non-empty string
+SELECT factstr.query_result('{"filters":[{"event_types":[1]}]}'::jsonb);
+ERROR:  event_type must be a non-empty string
+SELECT factstr.query_result('{"filters":[{"payload_predicates":{}}]}'::jsonb);
+ERROR:  payload_predicates must be an array
+SELECT factstr.query_result('{"filters":[{"payload_predicates":[[]]}]}'::jsonb);
+ERROR:  payload_predicate must be a JSON object
+SELECT factstr.query_result('{"min_sequence_number":1.5}'::jsonb);
+ERROR:  min_sequence_number must be an integer
+SELECT factstr.query_result('{"min_sequence_number":-1}'::jsonb);
+ERROR:  min_sequence_number must be greater than or equal to 0

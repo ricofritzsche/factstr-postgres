@@ -206,6 +206,153 @@ AS $$
     FROM returned_events;
 $$;
 
+CREATE FUNCTION factstr.query_result(event_query jsonb)
+RETURNS TABLE (
+    event_records jsonb,
+    last_returned_sequence_number bigint,
+    current_context_version bigint
+)
+LANGUAGE plpgsql
+STABLE
+AS $$
+DECLARE
+    normalized_filters jsonb;
+    min_sequence bigint;
+    filters_match_all boolean;
+BEGIN
+    IF jsonb_typeof(event_query) IS DISTINCT FROM 'object' THEN
+        RAISE EXCEPTION 'event_query must be a JSON object';
+    END IF;
+
+    IF event_query ? 'filters'
+       AND jsonb_typeof(event_query -> 'filters') IS DISTINCT FROM 'array' THEN
+        RAISE EXCEPTION 'filters must be an array';
+    END IF;
+
+    normalized_filters := COALESCE(event_query -> 'filters', '[]'::jsonb);
+    filters_match_all := NOT (event_query ? 'filters') OR jsonb_array_length(normalized_filters) = 0;
+
+    IF EXISTS (
+        SELECT 1
+        FROM jsonb_array_elements(normalized_filters) AS filter_data(filter_value)
+        WHERE jsonb_typeof(filter_value) IS DISTINCT FROM 'object'
+    ) THEN
+        RAISE EXCEPTION 'filter must be a JSON object';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM jsonb_array_elements(normalized_filters) AS filter_data(filter_value)
+        WHERE filter_value ? 'event_types'
+          AND jsonb_typeof(filter_value -> 'event_types') IS DISTINCT FROM 'array'
+    ) THEN
+        RAISE EXCEPTION 'event_types must be an array';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM jsonb_array_elements(normalized_filters) AS filter_data(filter_value)
+        CROSS JOIN LATERAL jsonb_array_elements(filter_value -> 'event_types') AS event_type_data(event_type_value)
+        WHERE filter_value ? 'event_types'
+          AND (
+              jsonb_typeof(event_type_value) IS DISTINCT FROM 'string'
+              OR length(event_type_value #>> '{}') = 0
+          )
+    ) THEN
+        RAISE EXCEPTION 'event_type must be a non-empty string';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM jsonb_array_elements(normalized_filters) AS filter_data(filter_value)
+        WHERE filter_value ? 'payload_predicates'
+          AND jsonb_typeof(filter_value -> 'payload_predicates') IS DISTINCT FROM 'array'
+    ) THEN
+        RAISE EXCEPTION 'payload_predicates must be an array';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM jsonb_array_elements(normalized_filters) AS filter_data(filter_value)
+        CROSS JOIN LATERAL jsonb_array_elements(filter_value -> 'payload_predicates') AS predicate_data(predicate_value)
+        WHERE filter_value ? 'payload_predicates'
+          AND jsonb_typeof(predicate_value) IS DISTINCT FROM 'object'
+    ) THEN
+        RAISE EXCEPTION 'payload_predicate must be a JSON object';
+    END IF;
+
+    IF event_query ? 'min_sequence_number'
+       AND (
+           jsonb_typeof(event_query -> 'min_sequence_number') IS DISTINCT FROM 'number'
+           OR NOT ((event_query ->> 'min_sequence_number') ~ '^-?[0-9]+$')
+       ) THEN
+        RAISE EXCEPTION 'min_sequence_number must be an integer';
+    END IF;
+
+    min_sequence := COALESCE((event_query ->> 'min_sequence_number')::bigint, 0);
+
+    IF min_sequence < 0 THEN
+        RAISE EXCEPTION 'min_sequence_number must be greater than or equal to 0';
+    END IF;
+
+    RETURN QUERY
+    WITH matching_context AS (
+        SELECT
+            events.sequence_number,
+            events.occurred_at,
+            events.event_type,
+            events.payload
+        FROM factstr.events
+        WHERE filters_match_all
+           OR EXISTS (
+               SELECT 1
+               FROM jsonb_array_elements(normalized_filters) AS filter_data(filter_value)
+               WHERE (
+                   NOT (filter_value ? 'event_types')
+                   OR EXISTS (
+                       SELECT 1
+                       FROM jsonb_array_elements_text(filter_value -> 'event_types') AS event_type_data(event_type_value)
+                       WHERE events.event_type = event_type_data.event_type_value
+                   )
+               )
+               AND (
+                   NOT (filter_value ? 'payload_predicates')
+                   OR EXISTS (
+                       SELECT 1
+                       FROM jsonb_array_elements(filter_value -> 'payload_predicates') AS predicate_data(predicate_value)
+                       WHERE events.payload @> predicate_data.predicate_value
+                   )
+               )
+           )
+    ),
+    returned_events AS (
+        SELECT
+            matching_context.sequence_number,
+            matching_context.occurred_at,
+            matching_context.event_type,
+            matching_context.payload
+        FROM matching_context
+        WHERE matching_context.sequence_number > min_sequence
+    )
+    SELECT
+        COALESCE(
+            jsonb_agg(
+                jsonb_build_object(
+                    'sequence_number', returned_events.sequence_number,
+                    'occurred_at', returned_events.occurred_at,
+                    'event_type', returned_events.event_type,
+                    'payload', returned_events.payload
+                )
+                ORDER BY returned_events.sequence_number ASC
+            ) FILTER (WHERE returned_events.sequence_number IS NOT NULL),
+            '[]'::jsonb
+        ) AS event_records,
+        MAX(returned_events.sequence_number) AS last_returned_sequence_number,
+        (SELECT MAX(matching_context.sequence_number) FROM matching_context) AS current_context_version
+    FROM returned_events;
+END;
+$$;
+
 -- append_if is the FACTSTR command context consistency primitive.
 -- The context version is evaluated over the full command context and is not
 -- affected by a read cursor.
