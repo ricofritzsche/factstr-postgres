@@ -1,34 +1,112 @@
 # FACTSTR PostgreSQL
 
-## Purpose
+FACTSTR PostgreSQL is a PostgreSQL extension that provides FACTSTR event storage
+and command context consistency inside PostgreSQL.
 
-FACTSTR PostgreSQL provides a PostgreSQL-native runtime for FACTSTR event storage and command context consistency.
+## Status
 
-The extension provides FACTSTR semantics inside PostgreSQL through a small API
-aligned with the FACTSTR Rust contract. It uses JSON EventQuery for query and
-command context selection. The API is intentionally small because the extension
-is not published yet.
+The current extension version is `0.1.0`.
 
-## Current API
+This extension is not yet published to PGXN. Install it from source.
 
-Core API:
+## What It Provides
 
-```sql
-factstr.append(events jsonb)
-factstr.query(event_query jsonb)
-factstr.append_if(events jsonb, context_query jsonb, expected_context_version bigint)
+- PostgreSQL-native FACTSTR event storage
+- Gapless committed sequence numbers
+- JSONB event payloads
+- JSON EventQuery based querying
+- Conditional append for command context consistency
+
+## Requirements
+
+- PostgreSQL
+- `pg_config` from the target PostgreSQL installation
+- PostgreSQL server development package for PGXS builds
+
+## Installation From Source
+
+The extension files are in [`extension/`](extension/).
+
+```bash
+cd extension
+make
+make install
 ```
 
-Internal implementation helper:
+Then enable the extension in a database:
+
+```sql
+CREATE EXTENSION factstr;
+```
+
+If `pg_config` on `PATH` does not point to the target PostgreSQL installation,
+pass it explicitly:
+
+```bash
+make PG_CONFIG=/path/to/pg_config install
+```
+
+## Running Tests
+
+Regression tests are under [`extension/sql/`](extension/sql/) and
+[`extension/expected/`](extension/expected/).
+
+```bash
+cd extension
+make installcheck
+```
+
+If needed, pass the target PostgreSQL connection settings:
+
+```bash
+make installcheck PGHOST=localhost PGPORT=5432 PGUSER=postgres
+```
+
+The GitHub Actions workflow also runs the extension regression tests.
+
+## API
+
+### `factstr.append(events jsonb)`
+
+Appends one or more events as a single committed batch.
+
+Each event must be a JSON object with:
+
+- `event_type`: non-empty string
+- `payload`: JSON object
+
+The function returns the inserted event records with assigned
+`sequence_number` values.
+
+### `factstr.query(event_query jsonb)`
+
+Runs a JSON EventQuery and returns exactly one row with:
+
+- `event_records jsonb`
+- `last_returned_sequence_number bigint`
+- `current_context_version bigint`
+
+`event_records` is a JSON array ordered by `sequence_number ASC`.
+`last_returned_sequence_number` describes the returned records.
+`current_context_version` describes the full matching context and ignores
+`min_sequence_number`.
+
+### `factstr.append_if(events jsonb, context_query jsonb, expected_context_version bigint)`
+
+Conditionally appends events using a JSON EventQuery as the command context.
+
+The function locks the metadata row, computes the current context version,
+compares it with `expected_context_version`, and appends only when they match.
+On conflict, it commits no events and consumes no sequence numbers.
+
+### Internal Helper
 
 ```sql
 factstr._current_context_version(event_query jsonb)
 ```
 
-`factstr.query(event_query jsonb)` aligns with the FACTSTR Rust
-`query(...) -> QueryResult` contract. There is no single-filter convenience API
-and no separate query result API. The internal helper is used by the extension
-implementation and is not intended as the public API.
+This function is used internally by the extension implementation. It is not a
+public API.
 
 ## JSON EventQuery
 
@@ -61,34 +139,6 @@ Semantics:
 - `min_sequence_number` affects returned records only.
 - `current_context_version` ignores `min_sequence_number`.
 
-## Query Result
-
-```sql
-factstr.query(event_query jsonb)
-```
-
-Returns exactly one row with:
-
-- `event_records`
-- `last_returned_sequence_number`
-- `current_context_version`
-
-`event_records` is ordered by `sequence_number ASC`.
-`last_returned_sequence_number` describes the returned records.
-`current_context_version` describes the full matching context and ignores
-`min_sequence_number`.
-
-## Conditional Append
-
-```sql
-factstr.append_if(events jsonb, context_query jsonb, expected_context_version bigint)
-```
-
-Uses the full JSON EventQuery as the command context. It locks the metadata row,
-computes the current context version, compares it to `expected_context_version`,
-and appends only if the versions match. A conflict commits no events and
-consumes no sequence numbers.
-
 ## Minimal Examples
 
 ```sql
@@ -98,41 +148,46 @@ CREATE EXTENSION factstr;
 ```sql
 SELECT *
 FROM factstr.append(
-  '[{"event_type":"account.created","payload":{"account_id":"acct_1"}}]'::jsonb
+    '[{"event_type":"account.created","payload":{"account_id":"acct_1"}}]'::jsonb
 );
 ```
 
 ```sql
 SELECT *
 FROM factstr.query(
-  '{
-    "filters": [
-      {
-        "event_types": ["account.created", "account.credited"],
-        "payload_predicates": [{ "account_id": "acct_1" }]
-      }
-    ],
-    "min_sequence_number": 0
-  }'::jsonb
+    '{
+      "filters": [
+        {
+          "event_types": ["account.created", "account.credited"],
+          "payload_predicates": [{ "account_id": "acct_1" }]
+        }
+      ],
+      "min_sequence_number": 0
+    }'::jsonb
 );
 ```
 
 ```sql
 SELECT *
 FROM factstr.append_if(
-  '[{"event_type":"account.credited","payload":{"account_id":"acct_1","amount":100}}]'::jsonb,
-  '{
-    "filters": [
-      {
-        "event_types": ["account.created", "account.credited"],
-        "payload_predicates": [{ "account_id": "acct_1" }]
-      }
-    ]
-  }'::jsonb,
-  1
+    '[{"event_type":"account.credited","payload":{"account_id":"acct_1","amount":100}}]'::jsonb,
+    '{
+      "filters": [
+        {
+          "event_types": ["account.created", "account.credited"],
+          "payload_predicates": [{ "account_id": "acct_1" }]
+        }
+      ]
+    }'::jsonb,
+    1
 );
 ```
 
+## Versioning
+
+`0.1.0` is the first extension version.
+
 ## License
 
-Licensed under either of Apache License, Version 2.0 or MIT license at your option.
+Licensed under either the MIT license or Apache License, Version 2.0, at your
+option.
