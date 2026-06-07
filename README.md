@@ -5,7 +5,7 @@ and command context consistency inside PostgreSQL.
 
 ## Status
 
-The latest GitHub release is `0.1.1`.
+The latest GitHub release is `0.1.2`.
 
 The PostgreSQL extension SQL version is `0.1.0`.
 
@@ -192,6 +192,10 @@ FROM factstr.append_if(
 
 `0.1.1` is a packaging and documentation release. It does not change the SQL
 extension version or extension behavior.
+
+`0.1.2` is a PGXN packaging compatibility release. It adds the root Makefile
+required by PGXN package checks and does not change the SQL extension version
+or extension behavior.
 
 ## License
 

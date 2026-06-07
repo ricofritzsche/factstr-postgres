@@ -7,7 +7,7 @@ PGXN publication is not part of the current release process. It is a later step.
 
 ## Version Checks
 
-For a release version such as `0.1.1`, verify:
+For a release version such as `0.1.2`, verify:
 
 - `META.json` has the release version.
 - `README.md` status matches the release version.
@@ -53,8 +53,8 @@ git status
 Create and push the release tag:
 
 ```bash
-git tag v0.1.1
-git push origin v0.1.1
+git tag v0.1.2
+git push origin v0.1.2
 ```
 
 ## GitHub Release Notes

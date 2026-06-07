@@ -9,6 +9,17 @@ for releases.
 
 No unreleased changes yet.
 
+## [0.1.2] - 2026-06-07
+
+### Added
+
+- Root `Makefile` for PGXN package checks.
+
+### Changed
+
+- No SQL API changes.
+- No extension behavior changes.
+
 ## [0.1.1] - 2026-06-07
 
 ### Added

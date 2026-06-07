@@ -1,7 +1,7 @@
 {
   "name": "factstr-postgres",
   "abstract": "PostgreSQL extension for FACTSTR event storage",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "maintainer": "Rico Fritzsche",
   "license": "mit",
   "provides": {
