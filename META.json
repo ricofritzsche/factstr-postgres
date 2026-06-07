@@ -1,0 +1,35 @@
+{
+  "name": "factstr-postgres",
+  "abstract": "PostgreSQL extension for FACTSTR event storage",
+  "version": "0.1.0",
+  "maintainer": "Rico Fritzsche",
+  "license": "mit",
+  "provides": {
+    "factstr": {
+      "version": "0.1.0",
+      "file": "extension/factstr--0.1.0.sql",
+      "docfile": "README.md"
+    }
+  },
+  "resources": {
+    "homepage": "https://github.com/ricofritzsche/factstr-postgres",
+    "repository": {
+      "web": "https://github.com/ricofritzsche/factstr-postgres",
+      "url": "https://github.com/ricofritzsche/factstr-postgres.git"
+    },
+    "bugtracker": {
+      "web": "https://github.com/ricofritzsche/factstr-postgres/issues"
+    }
+  },
+  "tags": [
+    "event-sourcing",
+    "postgres",
+    "postgresql",
+    "extension",
+    "jsonb"
+  ],
+  "meta-spec": {
+    "version": "1.0.0",
+    "url": "https://pgxn.org/meta/spec.txt"
+  }
+}
