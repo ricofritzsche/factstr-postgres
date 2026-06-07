@@ -5,9 +5,12 @@ and command context consistency inside PostgreSQL.
 
 ## Status
 
-The current extension version is `0.1.0`.
+The latest GitHub release is `0.1.1`.
 
-This extension is not yet published to PGXN. Install it from source.
+The PostgreSQL extension SQL version is `0.1.0`.
+
+PGXN-ready metadata is included. This extension is not yet published to PGXN.
+Install it from source.
 
 ## What It Provides
 
@@ -185,7 +188,10 @@ FROM factstr.append_if(
 
 ## Versioning
 
-`0.1.0` is the first extension version.
+`0.1.0` is the first PostgreSQL extension SQL version.
+
+`0.1.1` is a packaging and documentation release. It does not change the SQL
+extension version or extension behavior.
 
 ## License
 

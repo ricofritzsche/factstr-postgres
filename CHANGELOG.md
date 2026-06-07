@@ -9,6 +9,17 @@ for releases.
 
 No unreleased changes yet.
 
+## [0.1.1] - 2026-06-07
+
+### Added
+
+- PGXN `META.json` metadata.
+
+### Changed
+
+- No SQL API changes.
+- No extension behavior changes.
+
 ## [0.1.0] - 2026-06-07
 
 ### Added
